@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Respiratory Self-Check</title>
+<style>
+  :root{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;--accent:#0b66ff;--ok:#047857;--warn:#f59e0b;--danger:#dc2626}
+  .card{max-width:720px;margin:20px auto;padding:18px;border:1px solid #e6e6e6;border-radius:8px;background:#fff}
+  h1{margin:0 0 8px;font-size:1.25rem}
+  p.lead{margin:0 0 12px;color:#444}
+  label{display:block;margin:10px 0 6px;font-weight:600}
+  input[type="number"], select, .controls{width:100%;padding:8px;border:1px solid #d0d0d0;border-radius:6px}
+  .row{display:flex;gap:12px}
+  .col{flex:1}
+  .symptoms{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+  .symptoms label{font-weight:400}
+  button{margin-top:12px;padding:10px 14px;border:0;background:var(--accent);color:#fff;border-radius:6px;cursor:pointer}
+  .result{margin-top:14px;padding:12px;border-radius:8px}
+  .result.emergency{background:rgba(220,38,38,0.08);border:1px solid rgba(220,38,38,0.18);color:var(--danger)}
+  .result.urgent{background:rgba(245,158,11,0.06);border:1px solid rgba(245,158,11,0.14);color:var(--warn)}
+  .result.ok{background:rgba(4,120,87,0.06);border:1px solid rgba(4,120,87,0.14);color:var(--ok)}
+  .disclaimer{font-size:0.9rem;color:#555;margin-top:12px}
+  .small{font-size:0.9rem;color:#666}
+  @media (min-width:600px){ .row .col{min-width:0} }
+</style>
+</head>
+<body>
+  <main class="card" aria-labelledby="title">
+    <h1 id="title">Respiratory Self-Check</h1>
+    <p class="lead">Enter measurements and symptoms below for a quick triage suggestion. This is not a diagnosis. See the disclaimer.</p>
+
+    <form id="respForm" onsubmit="return false" aria-describedby="instructions">
+      <div id="instructions" class="small">If you have severe difficulty breathing, chest pain, fainting, or blue lips/fingers — call emergency services now.</div>
+
+      <label for="spo2">Oxygen saturation (SpO2) %</label>
+      <input id="spo2" name="spo2" type="number" inputmode="numeric" min="50" max="100" placeholder="e.g., 97" aria-required="true" />
+
+      <div class="row" style="margin-top:8px">
+        <div class="col">
+          <label for="rr">Respiratory rate (breaths per minute)</label>
+          <input id="rr" name="rr" type="number" inputmode="numeric" min="5" max="60" placeholder="e.g., 16" />
+        </div>
+        <div class="col">
+          <label for="hr">Heart rate (optional)</label>
+          <input id="hr" name="hr" type="number" inputmode="numeric" min="30" max="200" placeholder="e.g., 82" />
+        </div>
+      </div>
+
+      <label>Symptoms (check any that apply)</label>
+      <div class="symptoms" role="group" aria-label="Symptoms">
+        <label><input type="checkbox" value="cough" name="sym"> Cough</label>
+        <label><input type="checkbox" value="fever" name="sym"> Fever</label>
+        <label><input type="checkbox" value="wheeze" name="sym"> Wheeze</label>
+        <label><input type="checkbox" value="sputum" name="sym"> Green/bloody sputum</label>
+        <label><input type="checkbox" value="chestpain" name="sym"> Chest pain</label>
+        <label><input type="checkbox" value="confusion" name="sym"> Confusion / drowsy</label>
+        <label><input type="checkbox" value="blue" name="sym"> Blue lips / fingertips</label>
+        <label><input type="checkbox" value="cantSpeak" name="sym"> Can't speak full sentences</label>
+      </div>
+
+      <label style="margin-top:10px">
+        <input id="chronic" type="checkbox" /> I have chronic lung disease (asthma/COPD/other)
+      </label>
+
+      <label for="baseline" class="small">If chronic, usual baseline SpO2 (optional)</label>
+      <input id="baseline" name="baseline" type="number" inputmode="numeric" min="70" max="100" placeholder="e.g., 90" />
+
+      <button id="checkBtn" type="button" onclick="runCheck()">Get recommendation</button>
+
+      <div id="result" class="result" role="status" aria-live="polite" style="display:none"></div>
+
+      <div class="disclaimer">
+        <strong>Medical disclaimer:</strong> This tool provides general guidance only and is not a substitute for professional medical evaluation. If in doubt, seek medical attention.
+      </div>
+    </form>
+  </main>
+
+<script>
+function runCheck() {
+  const spo2El = document.getElementById('spo2');
+  const rrEl = document.getElementById('rr');
+  const baselineEl = document.getElementById('baseline');
+  const chronicEl = document.getElementById('chronic');
+  const resultEl = document.getElementById('result');
+
+  const spo2 = parseFloat(spo2El.value);
+  const rr = parseFloat(rrEl.value);
+  const baseline = parseFloat(baselineEl.value);
+  const chronic = chronicEl.checked;
+
+  // get symptoms
+  const checked = Array.from(document.querySelectorAll('input[name="sym"]:checked')).map(n=>n.value);
+  const severeSymptoms = ['chestpain','confusion','blue','cantSpeak'];
+
+  // validate
+  if (Number.isNaN(spo2)) {
+    showResult('Please enter your SpO2 value (percent).', 'urgent'); return;
+  }
+
+  // emergency conditions
+  const hasSevereSym = checked.some(s => severeSymptoms.includes(s));
+  const rrHigh = !Number.isNaN(rr) && rr >= 30;
+  const spo2Low = spo2 < 92;
+
+  // chronic baseline logic: treat large drop from baseline as concerning
+  let relativeDrop = 0;
+  if (chronic && !Number.isNaN(baseline)) {
+    relativeDrop = baseline - spo2;
+  }
+
+  if (hasSevereSym || rrHigh || spo2Low || relativeDrop >= 4) {
+    showResult(
+      'Emergency: Your measurements or symptoms suggest a serious issue. Seek emergency care or call your local emergency number now.',
+      'emergency'
+    );
+    return;
+  }
+
+  // urgent thresholds
+  if ((spo2 >= 92 && spo2 <= 94) || (!Number.isNaN(rr) && rr >= 20) || checked.includes('sputum') || checked.includes('wheeze') || checked.includes('fever')) {
+    showResult(
+      'Urgent: Consider contacting your clinician or going to urgent care for evaluation within 24 hours, especially if symptoms worsen.',
+      'urgent'
+    );
+    return;
+  }
+
+  // otherwise likely safe to monitor
+  showResult(
+    'Monitor at home: Your numbers are in a reassuring range. Rest, avoid exertion, stay hydrated, and contact your clinician if you worsen or have new concerning symptoms.',
+    'ok'
+  );
+}
+
+function showResult(text, level) {
+  const el = document.getElementById('result');
+  el.textContent = text;
+  el.className = 'result ' + (level === 'emergency' ? 'emergency' : level === 'urgent' ? 'urgent' : 'ok');
+  el.style.display = 'block';
+}
+</script>
+</body>
+</html>
